@@ -1,1 +1,390 @@
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+----------------------------------------------------------
+-- 两个 CFrame 点 + 速度
+----------------------------------------------------------
+
+local pointA = nil
+local pointB = nil
+local flySpeed = 200
+
+----------------------------------------------------------
+-- 飞行过去的逻辑
+----------------------------------------------------------
+
+local flyingToTarget = false
+local cancelRequested = false
+local currentConnection = nil
+local currentBodyVelocity = nil
+local currentBodyGyro = nil
+
+local function cleanupFly()
+    if currentConnection then
+        currentConnection:Disconnect()
+        currentConnection = nil
+    end
+    if currentBodyVelocity then
+        currentBodyVelocity:Destroy()
+        currentBodyVelocity = nil
+    end
+    if currentBodyGyro then
+        currentBodyGyro:Destroy()
+        currentBodyGyro = nil
+    end
+    humanoid.PlatformStand = false
+    flyingToTarget = false
+    cancelRequested = false
+end
+
+local function flyTo(targetCFrame)
+    if not targetCFrame then return end
+    if flyingToTarget then return end -- 防止重复触发
+
+    flyingToTarget = true
+    cancelRequested = false
+    humanoid.PlatformStand = true
+
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bodyVelocity.Parent = rootPart
+    currentBodyVelocity = bodyVelocity
+
+    local bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    bodyGyro.P = 10000
+    bodyGyro.CFrame = rootPart.CFrame
+    bodyGyro.Parent = rootPart
+    currentBodyGyro = bodyGyro
+
+    local connection
+    connection = RunService.RenderStepped:Connect(function()
+        if cancelRequested then
+            connection:Disconnect()
+            cleanupFly()
+            return
+        end
+
+        if not rootPart or not rootPart.Parent then
+            connection:Disconnect()
+            cleanupFly()
+            return
+        end
+
+        local targetPos = targetCFrame.Position
+        local currentPos = rootPart.Position
+        local distance = (targetPos - currentPos).Magnitude
+
+        if distance < 2 then
+            connection:Disconnect()
+            cleanupFly()
+            return
+        end
+
+        local direction = (targetPos - currentPos).Unit
+        bodyVelocity.Velocity = direction * flySpeed
+        bodyGyro.CFrame = CFrame.new(currentPos, targetPos)
+    end)
+
+    currentConnection = connection
+end
+
+local function cancelFly()
+    if flyingToTarget then
+        cancelRequested = true
+    end
+end
+
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    humanoid = character:WaitForChild("Humanoid")
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    flyingToTarget = false
+    cancelRequested = false
+    currentConnection = nil
+    currentBodyVelocity = nil
+    currentBodyGyro = nil
+end)
+
+----------------------------------------------------------
+-- GUI 面板
+----------------------------------------------------------
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FlyTeleportGui"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 220, 0, 320)
+mainFrame.Position = UDim2.new(0, 20, 0, 100)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+-- 标题栏(拖动用)
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 32)
+titleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+titleBar.BorderSizePixel = 0
+titleBar.Active = true
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleBar
+
+local titleFix = Instance.new("Frame")
+titleFix.Size = UDim2.new(1, 0, 0, 10)
+titleFix.Position = UDim2.new(0, 0, 1, -10)
+titleFix.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+titleFix.BorderSizePixel = 0
+titleFix.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -10, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "飞行传送面板"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 16
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+local content = Instance.new("Frame")
+content.Size = UDim2.new(1, 0, 1, -32)
+content.Position = UDim2.new(0, 0, 0, 32)
+content.BackgroundTransparency = 1
+content.Parent = mainFrame
+
+-- 按钮1:保存当前位置为 A 点
+local setABtn = Instance.new("TextButton")
+setABtn.Size = UDim2.new(1, -20, 0, 36)
+setABtn.Position = UDim2.new(0, 10, 0, 10)
+setABtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+setABtn.Text = "保存当前位置为 A 点"
+setABtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+setABtn.Font = Enum.Font.GothamBold
+setABtn.TextSize = 13
+setABtn.Parent = content
+
+local setACorner = Instance.new("UICorner")
+setACorner.CornerRadius = UDim.new(0, 8)
+setACorner.Parent = setABtn
+
+setABtn.MouseButton1Click:Connect(function()
+    pointA = rootPart.CFrame
+    setABtn.Text = "A 点已保存 ✓"
+    task.wait(1)
+    setABtn.Text = "保存当前位置为 A 点"
+end)
+
+-- 按钮2:保存当前位置为 B 点
+local setBBtn = Instance.new("TextButton")
+setBBtn.Size = UDim2.new(1, -20, 0, 36)
+setBBtn.Position = UDim2.new(0, 10, 0, 54)
+setBBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+setBBtn.Text = "保存当前位置为 B 点"
+setBBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+setBBtn.Font = Enum.Font.GothamBold
+setBBtn.TextSize = 13
+setBBtn.Parent = content
+
+local setBCorner = Instance.new("UICorner")
+setBCorner.CornerRadius = UDim.new(0, 8)
+setBCorner.Parent = setBBtn
+
+setBBtn.MouseButton1Click:Connect(function()
+    pointB = rootPart.CFrame
+    setBBtn.Text = "B 点已保存 ✓"
+    task.wait(1)
+    setBBtn.Text = "保存当前位置为 B 点"
+end)
+
+-- 飞到 A 点
+local goABtn = Instance.new("TextButton")
+goABtn.Size = UDim2.new(1, -20, 0, 36)
+goABtn.Position = UDim2.new(0, 10, 0, 100)
+goABtn.BackgroundColor3 = Color3.fromRGB(45, 130, 80)
+goABtn.Text = "飞到 A 点"
+goABtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+goABtn.Font = Enum.Font.GothamBold
+goABtn.TextSize = 13
+goABtn.Parent = content
+
+local goACorner = Instance.new("UICorner")
+goACorner.CornerRadius = UDim.new(0, 8)
+goACorner.Parent = goABtn
+
+goABtn.MouseButton1Click:Connect(function()
+    if pointA then
+        flyTo(pointA)
+    else
+        goABtn.Text = "请先设置 A 点!"
+        task.wait(1)
+        goABtn.Text = "飞到 A 点"
+    end
+end)
+
+-- 飞到 B 点
+local goBBtn = Instance.new("TextButton")
+goBBtn.Size = UDim2.new(1, -20, 0, 36)
+goBBtn.Position = UDim2.new(0, 10, 0, 144)
+goBBtn.BackgroundColor3 = Color3.fromRGB(45, 130, 80)
+goBBtn.Text = "飞到 B 点"
+goBBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+goBBtn.Font = Enum.Font.GothamBold
+goBBtn.TextSize = 13
+goBBtn.Parent = content
+
+local goBCorner = Instance.new("UICorner")
+goBCorner.CornerRadius = UDim.new(0, 8)
+goBCorner.Parent = goBBtn
+
+goBBtn.MouseButton1Click:Connect(function()
+    if pointB then
+        flyTo(pointB)
+    else
+        goBBtn.Text = "请先设置 B 点!"
+        task.wait(1)
+        goBBtn.Text = "飞到 B 点"
+    end
+end)
+
+-- 取消飞行按钮
+local cancelBtn = Instance.new("TextButton")
+cancelBtn.Size = UDim2.new(1, -20, 0, 36)
+cancelBtn.Position = UDim2.new(0, 10, 0, 188)
+cancelBtn.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
+cancelBtn.Text = "取消飞行"
+cancelBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+cancelBtn.Font = Enum.Font.GothamBold
+cancelBtn.TextSize = 13
+cancelBtn.Parent = content
+
+local cancelCorner = Instance.new("UICorner")
+cancelCorner.CornerRadius = UDim.new(0, 8)
+cancelCorner.Parent = cancelBtn
+
+cancelBtn.MouseButton1Click:Connect(function()
+    cancelFly()
+end)
+
+-- 速度标签 + 滑条 (1-400)
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(1, -20, 0, 18)
+speedLabel.Position = UDim2.new(0, 10, 0, 234)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Text = "速度: " .. flySpeed
+speedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedLabel.Font = Enum.Font.Gotham
+speedLabel.TextSize = 13
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+speedLabel.Parent = content
+
+local sliderBack = Instance.new("Frame")
+sliderBack.Size = UDim2.new(1, -20, 0, 10)
+sliderBack.Position = UDim2.new(0, 10, 0, 256)
+sliderBack.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+sliderBack.Parent = content
+
+local sliderCorner1 = Instance.new("UICorner")
+sliderCorner1.CornerRadius = UDim.new(1, 0)
+sliderCorner1.Parent = sliderBack
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Size = UDim2.new((flySpeed - 1) / 399, 0, 1, 0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(80, 160, 255)
+sliderFill.Parent = sliderBack
+
+local sliderCorner2 = Instance.new("UICorner")
+sliderCorner2.CornerRadius = UDim.new(1, 0)
+sliderCorner2.Parent = sliderFill
+
+local sliderButton = Instance.new("TextButton")
+sliderButton.Size = UDim2.new(1, 0, 1, 0)
+sliderButton.BackgroundTransparency = 1
+sliderButton.Text = ""
+sliderButton.Parent = sliderBack
+
+local draggingSlider = false
+
+local function updateSlider(inputPos)
+    local relativeX = math.clamp((inputPos.X - sliderBack.AbsolutePosition.X) / sliderBack.AbsoluteSize.X, 0, 1)
+    flySpeed = math.floor(1 + relativeX * 399) -- 范围 1 到 400
+    sliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+    speedLabel.Text = "速度: " .. flySpeed
+end
+
+sliderButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSlider = true
+        updateSlider(input.Position)
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        updateSlider(input.Position)
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSlider = false
+    end
+end)
+
+----------------------------------------------------------
+-- 拖动面板
+----------------------------------------------------------
+
+local dragging = false
+local dragInput, dragStart, startPos
+
+local function updatePos(input)
+    local delta = input.Position - dragStart
+    mainFrame.Position = UDim2.new(
+        startPos.X.Scale, startPos.X.Offset + delta.X,
+        startPos.Y.Scale, startPos.Y.Offset + delta.Y
+    )
+end
+
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+titleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        updatePos(input)
+    end
+end)
